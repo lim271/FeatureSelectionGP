@@ -16,7 +16,7 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
 
     def __init__(self, kernel=None, regularization_param=0.5,
             *, alpha=1e-10, n_restarts_optimizer=10,
-            normalize_y=False, copy_X_train=True, random_state=None):
+            normalize_y=False, copy_X_train=True, random_state=None, magnitude=False):
         self.kernel = kernel
         self.regularization_param = regularization_param
         self.alpha = alpha
@@ -25,6 +25,7 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
         self.normalize_y = normalize_y
         self.copy_X_train = copy_X_train
         self.random_state = random_state
+        self.magnitude = magnitude
 
 
     def fit(self, X, y):
@@ -40,12 +41,19 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
         self : returns an instance of self.
         """
         if self.kernel is None:  # Use an RBF kernel as default
-            self.kernel_ = C(constant_value=1.0, constant_value_bounds=(1e-5, 1e5)) \
-                * RBF(
-                    length_scale=np.ones((X.shape[1])),
-                    length_scale_bounds=(0, 1e5)
-                ) \
-                + WhiteKernel(noise_level=1.0, noise_level_bounds=(1e-5, 1e5))
+            if self.magnitude:
+                self.kernel_ = C(constant_value=1.0, constant_value_bounds=(1e-5, 1e5)) \
+                    * RBF(
+                        length_scale=np.ones((X.shape[1])),
+                        length_scale_bounds=(0, 1e5)
+                    ) \
+                    + WhiteKernel(noise_level=1.0, noise_level_bounds=(1e-5, 1e5))
+            else:
+                self.kernel_ = RBF(
+                        length_scale=np.ones((X.shape[1])),
+                        length_scale_bounds=(0, 1e5)
+                    ) \
+                    + WhiteKernel(noise_level=1.0, noise_level_bounds=(1e-5, 1e5))
         else:
             self.kernel_ = clone(self.kernel)
 
