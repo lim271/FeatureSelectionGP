@@ -377,7 +377,7 @@ class RBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
     array([[0.8354..., 0.03228..., 0.1322...],
            [0.7906..., 0.0652..., 0.1441...]])
     """
-    def __init__(self, length_scale=1.0, length_scale_bounds=(1e-5, 1e5)):
+    def __init__(self, length_scale=1.0, length_scale_bounds=(np.finfo(float).tiny, 1e5)):
         self.length_scale = length_scale
         self.length_scale_bounds = length_scale_bounds
 
@@ -436,8 +436,8 @@ class RBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
                     "Gradient can only be evaluated when Y is None."
                 )
             dists = cdist(
-                X / length_scale,
-                Y / length_scale,
+                X * (length_scale ** 0.5),
+                Y * (length_scale ** 0.5),
                 metric='sqeuclidean'
             )
             K = np.exp(-.5 * dists)
@@ -455,8 +455,7 @@ class RBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
                 return K, K_gradient
             elif self.anisotropic:
                 # We need to recompute the pairwise dimension-wise distances
-                K_gradient = (X[:, np.newaxis, :] - X[np.newaxis, :, :]) ** 2 \
-                    * (-length_scale)
+                K_gradient = -(X[:, np.newaxis, :] - X[np.newaxis, :, :]) ** 2
                 K_gradient *= K[..., np.newaxis]
                 return K, K_gradient
         else:

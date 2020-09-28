@@ -14,8 +14,8 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
     FeatureSelectionGPR - Gaussian process regression with $l_1$-regularization
     """
 
-    def __init__(self, kernel=None, regularization_param=1.0,
-            *, alpha=1e-10, n_restarts_optimizer=0,
+    def __init__(self, kernel=None, regularization_param=0.5,
+            *, alpha=1e-10, n_restarts_optimizer=10,
             normalize_y=False, copy_X_train=True, random_state=None):
         self.kernel = kernel
         self.regularization_param = regularization_param
@@ -40,7 +40,7 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
         self : returns an instance of self.
         """
         if self.kernel is None:  # Use an RBF kernel as default
-            self.kernel = C(constant_value=1.0, constant_value_bounds=(1e-5, 1e-5)) \
+            self.kernel_ = C(constant_value=1.0, constant_value_bounds=(1e-5, 1e5)) \
                 * RBF(
                     length_scale=np.ones((X.shape[1])),
                     length_scale_bounds=(0, 1e5)
