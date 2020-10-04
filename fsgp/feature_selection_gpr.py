@@ -85,7 +85,18 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
         if self.optimizer is not None and self.kernel_.n_dims > 0:
             # Choose hyperparameters based on maximizing the log-marginal
             # likelihood (potentially starting from several initial values)
-            def obj_func(theta, eval_gradient=True):
+            def obj_func_magnitude(theta, eval_gradient=True):
+                if eval_gradient:
+                    lml, grad = self.log_marginal_likelihood(
+                        theta, eval_gradient=True, clone_kernel=False
+                    )
+                    grad[1:-1] = 0
+                    return - lml, -grad
+                else:
+                    return - self.log_marginal_likelihood(
+                        theta, clone_kernel=False
+                    )
+            def obj_func_lengthscale(theta, eval_gradient=True):
                 _reg = self.regularization_param * np.sum(np.abs(theta[1:-1]))
                 if eval_gradient:
                     lml, grad = self.log_marginal_likelihood(
@@ -94,7 +105,8 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
                     for idx, var in enumerate(theta[1:-1]):
                         if var > 0:
                             grad[idx] -= self.regularization_param
-                    grad -= self.regularization_param * theta / 2
+                    grad[0] = 0
+                    grad[-1] = 0
                     return _reg - lml, -grad
                 else:
                     return _reg - self.log_marginal_likelihood(
@@ -102,11 +114,16 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
                     )
 
             # First optimize starting from theta specified in kernel
+            _theta_pretrained, _ = self._constrained_optimization(
+                obj_func_magnitude,
+                self.kernel_.theta,
+                self.kernel_.bounds
+            )
             optima = [
                 (
                     self._constrained_optimization(
-                        obj_func,
-                        self.kernel_.theta,
+                        obj_func_lengthscale,
+                        _theta_pretrained,
                         self.kernel_.bounds
                     )
                 )
@@ -123,9 +140,12 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
                 while self.n_restarts_optimizer > len(optima)-2:
                     theta_initial = \
                         self._rng.uniform(bounds[:, 0], bounds[:, 1])
+                    _theta_pretrained, _ = self._constrained_optimization(
+                        obj_func_magnitude, theta_initial, bounds
+                    )
                     optima.append(
                         self._constrained_optimization(
-                            obj_func, theta_initial, bounds
+                            obj_func_lengthscale, _theta_pretrained, bounds
                         )
                     )
             # Select result from run with minimal (negative) log-marginal
