@@ -98,6 +98,7 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
                     )
             def obj_func_lengthscale(theta, eval_gradient=True):
                 _reg = self.regularization_param * np.sum(np.abs(theta[1:-1]))
+                _reg = self.regularization_param / 2 * np.dot(theta[1:-1], theta[1:-1])
                 if eval_gradient:
                     lml, grad = self.log_marginal_likelihood(
                         theta, eval_gradient=True, clone_kernel=False
@@ -105,8 +106,8 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
                     for idx, var in enumerate(theta[1:-1]):
                         if var > 0:
                             grad[idx] -= self.regularization_param
-                    grad[0] = 0
-                    grad[-1] = 0
+                    grad[1:-1] -= self.regularization_param * theta[1:-1]
+                    grad[0] = grad[-1] = 0
                     return _reg - lml, -grad
                 else:
                     return _reg - self.log_marginal_likelihood(
