@@ -15,7 +15,7 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
     """
 
     def __init__(self, kernel=None, regularization_param=0.5,
-            *, alpha=1e-10, n_restarts_optimizer=10,
+            *, alpha=1e-10, n_restarts_optimizer=1,
             normalize_y=False, copy_X_train=True, random_state=None):
         self.kernel = kernel
         self.regularization_param = regularization_param
