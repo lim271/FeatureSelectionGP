@@ -15,13 +15,16 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
     """
 
     def __init__(self, kernel=None, regularization_param=0.5,
-            *, alpha=1e-10, n_restarts_optimizer=1,
+            *, alpha=1e-10, rho=1.0, n_restarts_optimizer=0, admm_maxiter=100, admm_tol=5e-3,
             normalize_y=False, copy_X_train=True, random_state=None):
         self.kernel = kernel
         self.regularization_param = regularization_param
         self.alpha = alpha
+        self.rho = rho
         self.optimizer = "fmin_l_bfgs_b"
         self.n_restarts_optimizer = n_restarts_optimizer
+        self.admm_maxiter = admm_maxiter
+        self.admm_tol = admm_tol
         self.normalize_y = normalize_y
         self.copy_X_train = copy_X_train
         self.random_state = random_state
@@ -85,48 +88,51 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
         if self.optimizer is not None and self.kernel_.n_dims > 0:
             # Choose hyperparameters based on maximizing the log-marginal
             # likelihood (potentially starting from several initial values)
-            def obj_func_magnitude(theta, eval_gradient=True):
-                if eval_gradient:
-                    lml, grad = self.log_marginal_likelihood(
-                        theta, eval_gradient=True, clone_kernel=False
-                    )
-                    grad[1:-1] = 0
-                    return - lml, -grad
-                else:
-                    return - self.log_marginal_likelihood(
-                        theta, clone_kernel=False
-                    )
-            def obj_func_lengthscale(theta, eval_gradient=True):
-                _reg = self.regularization_param * np.sum(np.abs(theta[1:-1]))
-                _reg = self.regularization_param / 2 * np.dot(theta[1:-1], theta[1:-1])
-                if eval_gradient:
-                    lml, grad = self.log_marginal_likelihood(
-                        theta, eval_gradient=True, clone_kernel=False
-                    )
-                    for idx, var in enumerate(theta[1:-1]):
-                        if var > 0:
-                            grad[idx] -= self.regularization_param
-                    grad[1:-1] -= self.regularization_param * theta[1:-1]
-                    grad[0] = grad[-1] = 0
-                    return _reg - lml, -grad
-                else:
-                    return _reg - self.log_marginal_likelihood(
-                        theta, clone_kernel=False
-                    )
+            def shrinkage(x, kappa):
+                return np.maximum(0, x - kappa) - np.maximum(0, -x - kappa)
 
             # First optimize starting from theta specified in kernel
-            _theta_pretrained, _ = self._constrained_optimization(
-                obj_func_magnitude,
-                self.kernel_.theta,
-                self.kernel_.bounds
-            )
+            def ADMM(initial_theta, bounds):
+                _theta = initial_theta
+                w = _theta[1:-1]
+                w_old = w
+                u = 0
+                _abstol = len(w) * self.admm_tol ** 2
+                for _iter in range(self.admm_maxiter):
+                    def obj_func(theta, eval_gradient=True):
+                        _reg = self.regularization_param * np.sum(np.abs(theta[1:-1]))
+                        _res = theta[1:-1] - w
+                        # _aug = self.rho * np.dot(_res, _res) / 2
+                        # _dual = self.rho * np.dot(u, _res)
+                        _aug_dual = self.rho * np.dot(u + _res / 2, _res)
+                        if eval_gradient:
+                            lml, grad = self.log_marginal_likelihood(
+                                theta, eval_gradient=True, clone_kernel=False
+                            )
+                            grad[1:-1] -= self.rho * (_res + u)
+                            return _reg + _aug_dual - lml, -grad
+                        else:
+                            return _reg + _aug_dual - self.log_marginal_likelihood(
+                                theta, clone_kernel=False
+                            )
+                    sol = self._constrained_optimization(
+                        obj_func,
+                        _theta,
+                        bounds
+                    )
+                    _theta = sol[0]
+                    w  = shrinkage(_theta[1:-1] + u, self.regularization_param / self.rho)
+                    u += (_theta[1:-1] - w)
+                    if (np.linalg.norm(_theta[1:-1] - w) < _abstol) and \
+                        (np.linalg.norm(w - w_old) < _abstol + self.admm_tol * np.linalg.norm(self.rho*u)):
+                        print('ADMM stopped after ', _iter+1, 'iterations.')
+                        break
+                    w_old = w
+                return sol
+
             optima = [
                 (
-                    self._constrained_optimization(
-                        obj_func_lengthscale,
-                        _theta_pretrained,
-                        self.kernel_.bounds
-                    )
+                    ADMM(self.kernel_.theta, self.kernel_.bounds)
                 )
             ]
 
@@ -141,12 +147,9 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
                 while self.n_restarts_optimizer > len(optima)-2:
                     theta_initial = \
                         self._rng.uniform(bounds[:, 0], bounds[:, 1])
-                    _theta_pretrained, _ = self._constrained_optimization(
-                        obj_func_magnitude, theta_initial, bounds
-                    )
                     optima.append(
-                        self._constrained_optimization(
-                            obj_func_lengthscale, _theta_pretrained, bounds
+                        ADMM(
+                            theta_initial, bounds
                         )
                     )
             # Select result from run with minimal (negative) log-marginal
