@@ -2,7 +2,7 @@ from time import time
 import numpy as np
 from fsgp import FeatureSelectionGPR
 
-#np.random.seed(7)
+# np.random.seed(7)
 
 def compute_accuracy():
     X = 1. / (np.arange(1, 51) + np.arange(0, 200)[:, np.newaxis])
@@ -10,13 +10,13 @@ def compute_accuracy():
     y = X.dot(h).reshape((-1, 1)) 
     X = np.concatenate((X, np.random.randn(200, 50)), axis=1)
 
-    fsgp = FeatureSelectionGPR(n_restarts_optimizer=1, regularization_param=1.0)
+    fsgp = FeatureSelectionGPR(n_restarts_optimizer=0, regularization_param=1.0)
     tic = time()
     fsgp.fit(X, y)
     toc = time()
-    #print('h=', h.reshape((-1)))
-    #print('y=', y.reshape((-1)))
-    #print('w=', fsgp.kernel_.k1.k2.length_scale)
+    # print('h=', h.reshape((-1)))
+    # print('y=', y.reshape((-1)))
+    # print('w=', fsgp.kernel_.k1.k2.length_scale)
     tp = 0
     tn = 0
     for idx, param in enumerate(fsgp.kernel_.k1.k2.length_scale):
@@ -30,7 +30,7 @@ def compute_accuracy():
     return toc-tic, tp, tn
 
 if __name__=="__main__":
-    n = 1
+    n = 10
     avg_t = 0
     acc = 0
     for _ in range(n):
