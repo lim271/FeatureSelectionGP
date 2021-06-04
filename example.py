@@ -10,7 +10,7 @@ def compute_accuracy():
     y = X.dot(h).reshape((-1, 1)) 
     X = np.concatenate((X, np.random.randn(200, 50)), axis=1)
 
-    fsgp = FeatureSelectionGPR(n_restarts_optimizer=0, regularization_param=1.0)
+    fsgp = FeatureSelectionGPR()
     tic = time()
     fsgp.fit(X, y)
     toc = time()
