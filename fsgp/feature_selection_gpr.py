@@ -14,11 +14,13 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
     FeatureSelectionGPR - Gaussian process regression with $l_1$-regularization
     """
 
-    def __init__(self, kernel=None, regularization_param=0.5,
+    def __init__(self, kernel=None, regularization_l1=1.0, regularization_l2=1e-2, regularization_noise=1e3,
             *, alpha=1e-10, rho=1.0, n_restarts_optimizer=0, admm_maxiter=100, admm_tol=5e-3,
             normalize_y=False, copy_X_train=True, random_state=None):
         self.kernel = kernel
-        self.regularization_param = regularization_param
+        self.regularization_l1 = regularization_l1
+        self.regularization_l2 = regularization_l2
+        self.regularization_noise = regularization_noise
         self.alpha = alpha
         self.rho = rho
         self.optimizer = "fmin_l_bfgs_b"
@@ -96,20 +98,22 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
                 _theta = initial_theta
                 w = _theta[1:-1]
                 w_old = w
-                u = 0
+                u = np.zeros_like(w)
                 _abstol = len(w) * self.admm_tol ** 2
                 for _iter in range(self.admm_maxiter):
                     def obj_func(theta, eval_gradient=True):
-                        _reg = self.regularization_param * np.sum(np.abs(theta[1:-1]))
+                        _reg  = self.regularization_l1 * np.sum(np.abs(w))
+                        _reg += self.regularization_l2 * np.dot(theta[1:-1], theta[1:-1]) * .5
+                        _reg += self.regularization_noise * theta[1:-1] ** 2 * .5
                         _res = theta[1:-1] - w
-                        # _aug = self.rho * np.dot(_res, _res) / 2
-                        # _dual = self.rho * np.dot(u, _res)
                         _aug_dual = self.rho * np.dot(u + _res / 2, _res)
                         if eval_gradient:
                             lml, grad = self.log_marginal_likelihood(
                                 theta, eval_gradient=True, clone_kernel=False
                             )
                             grad[1:-1] -= self.rho * (_res + u)
+                            grad[1:-1] -= self.regularization_l2 * theta[1:-1]
+                            grad[-1]   -= self.regularization_noise * theta[-1]
                             return _reg + _aug_dual - lml, -grad
                         else:
                             return _reg + _aug_dual - self.log_marginal_likelihood(
@@ -121,7 +125,7 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
                         bounds
                     )
                     _theta = sol[0]
-                    w  = shrinkage(_theta[1:-1] + u, self.regularization_param / self.rho)
+                    w  = shrinkage(_theta[1:-1] + u, self.regularization_l1 / self.rho)
                     u += (_theta[1:-1] - w)
                     if (np.linalg.norm(_theta[1:-1] - w) < _abstol) and \
                         (np.linalg.norm(w - w_old) < _abstol + self.admm_tol * np.linalg.norm(self.rho*u)):
@@ -136,8 +140,7 @@ class FeatureSelectionGPR(GaussianProcessRegressor):
                 )
             ]
 
-            # Additional runs are performed from log-uniform chosen initial
-            # theta
+            # Additional runs are performed from log-uniform chosen initial theta
             if self.n_restarts_optimizer > 0:
                 if not np.isfinite(self.kernel_.bounds).all():
                     raise ValueError(
